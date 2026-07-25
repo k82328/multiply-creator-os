@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import MultiplyCreatorOS from "../components/MultiplyCreatorOS";
 
+export const dynamic = "force-dynamic";
+
 export default function Home() {
   const router = useRouter();
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out

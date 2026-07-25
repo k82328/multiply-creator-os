@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
+export const dynamic = "force-dynamic";
+
 const TOKENS = {
   bg: "#131209",
   bgElev: "#1C1A12",
