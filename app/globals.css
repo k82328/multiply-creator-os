@@ -1,0 +1,67 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap");
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #131209;
+  color: #f1eada;
+}
+body {
+  min-height: 100vh;
+}
+::placeholder {
+  color: #6e6552;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #c9a063;
+  outline-offset: 2px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+.pulse-bar {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+input[type="number"]::-webkit-inner-spin-button {
+  opacity: 0.5;
+}
+@keyframes multiply-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.multiply-ring {
+  animation: multiply-spin 40s linear infinite;
+  transform-origin: 50% 50%;
+}
+@media (max-width: 640px) {
+  div[style*="grid-template-columns: minmax(240px,320px) 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  div[style*="grid-template-columns: minmax(260px,1fr) minmax(260px,1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+}
