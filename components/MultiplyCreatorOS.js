@@ -329,7 +329,7 @@ function AIAssistant() {
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(240px,320px) 1fr", gap: 18 }}>
+      <div className="grid-sidebar">
         <div>
           <div style={{ ...cardStyle, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -472,11 +472,11 @@ function ContentStrategyPanel() {
   return (
     <div style={{ marginTop: 8 }}>
       <InfoNote>以下「每日題目」「行事曆」「三個資料庫」已可實際使用並自動儲存；資料庫屬於團隊共用，所有使用者都看得到。「爆款案例拆解」「品牌內容方向」「個人定位設定」「成功內容模板」仍為架構規劃，尚未做成功能。</InfoNote>
-      <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(260px,1fr) minmax(260px,1fr)", gap: 18 }}>
+      <div className="grid-2col" style={{ marginTop: 16 }}>
         <div><DailyTopicGenerator /><TagEditor label="內容分類" listKey="content-categories" hint="新增分類，按 Enter" /></div>
         <div><ContentCalendar /></div>
       </div>
-      <div style={{ marginTop: 4, display: "grid", gridTemplateColumns: "minmax(260px,1fr) minmax(260px,1fr)", gap: 18 }}>
+      <div className="grid-2col" style={{ marginTop: 4 }}>
         <TagEditor label="客群痛點資料庫" listKey="pain-points" hint="新增痛點，按 Enter" />
         <TagEditor label="服務主題資料庫" listKey="service-topics" hint="新增服務主題，按 Enter" />
       </div>
@@ -508,7 +508,7 @@ function ProductionPanel() {
   return (
     <div style={{ marginTop: 8 }}>
       <InfoNote>影片自動化功能（自動剪停頓、自動字幕、9:16 裁切、人臉追蹤等）需要真正的影片處理引擎，此原型尚未串接，僅呈現架構。以下「封面／輪播圖／限動」文案產生器已可實際使用，並會沿用你在 AI 社群助理設定的語氣。</InfoNote>
-      <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(240px,320px) 1fr", gap: 18 }}>
+      <div className="grid-sidebar" style={{ marginTop: 16 }}>
         <div style={cardStyle}>
           <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12 }}>模板類型</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>{PRODUCTION_TYPES.map((t) => <button key={t.id} onClick={() => setTypeId(t.id)} style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12.5, border: `1px solid ${typeId === t.id ? TOKENS.gold : TOKENS.line}`, background: typeId === t.id ? TOKENS.gold : "transparent", color: typeId === t.id ? TOKENS.bg : TOKENS.inkDim, cursor: "pointer" }}>{t.label}</button>)}</div>
@@ -638,7 +638,7 @@ function PublishingPanel() {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(260px,1fr) minmax(260px,1fr)", gap: 18 }}>
+      <div className="grid-2col">
         <div>
           <SectionLabel>每日任務</SectionLabel>
           <div style={{ ...cardStyle, marginTop: 14 }}>
@@ -701,7 +701,7 @@ function AnalyticsPanel() {
   return (
     <div style={{ marginTop: 8 }}>
       <InfoNote>此為手動輸入的儀表板，尚未串接 Instagram、預約系統等真實數據源——之後可透過「資料整合」模組把這裡改成自動抓取。這裡的數字只有你自己看得到。</InfoNote>
-      <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(260px,1fr) minmax(260px,1fr)", gap: 18 }}>
+      <div className="grid-2col" style={{ marginTop: 16 }}>
         <div style={cardStyle}>
           <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 14 }}>本週數據輸入</div>
           {FUNNEL_STEPS.map((step) => (
