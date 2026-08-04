@@ -6,7 +6,7 @@ import {
   Bot, BarChart3,
   Users, BookOpen, Link2, ArrowRight, ChevronLeft, Sparkles,
   Wand2, Copy, Check, RefreshCw, Loader2, MessageSquareText,
-  X, LogOut,
+  LogOut,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { callClaude } from "../lib/claude";
@@ -108,14 +108,6 @@ function buildDailyTopicsPrompt(profile) {
 
 /* ---------- shared bits ---------- */
 
-function Chip({ children, onRemove }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 10px 7px 14px", borderRadius: 999, border: `1px solid ${TOKENS.line}`, background: TOKENS.bgCard, color: TOKENS.ink, fontSize: 13, letterSpacing: "0.02em", margin: "0 8px 8px 0" }}>
-      {children}
-      {onRemove && <button onClick={onRemove} style={{ background: "none", border: "none", color: TOKENS.inkFaint, cursor: "pointer", padding: 2, display: "flex" }}><X size={12} /></button>}
-    </span>
-  );
-}
 function SectionLabel({ children }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -437,8 +429,6 @@ function LayerDetail({ layer, onBack }) {
       </div>
       <p style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 17, color: TOKENS.ink, fontStyle: "italic", margin: "20px 0 6px", paddingLeft: 20, borderLeft: `2px solid ${TOKENS.gold}` }}>「{layer.problem}」</p>
       <p style={{ color: TOKENS.inkDim, fontSize: 14, lineHeight: 1.9, maxWidth: 620, margin: "12px 0 32px" }}>{layer.core}</p>
-      <SectionLabel>功能模組</SectionLabel>
-      <div style={{ marginTop: 14 }}>{layer.features.map((f) => <Chip key={f}>{f}</Chip>)}</div>
 
       {layer.key === "content" && <ContentPanel />}
       {layer.key === "analytics" && <AnalyticsPanel />}
