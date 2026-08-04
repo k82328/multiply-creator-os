@@ -3,10 +3,10 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Target, Bot, Video, CalendarCheck2, BarChart3, GraduationCap,
+  Target, Bot, BarChart3,
   Users, BookOpen, Link2, ArrowRight, ChevronLeft, Sparkles,
   Wand2, Copy, Check, RefreshCw, Loader2, MessageSquareText,
-  Plus, X, CalendarDays, Image as ImageIcon, Trophy, ChevronRight as ChevronRightIcon,
+  Plus, X, CalendarDays,
   LogOut,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -14,13 +14,9 @@ import { callClaude } from "../lib/claude";
 import { UserIdContext, useUserId } from "../lib/UserIdContext";
 import {
   getProfile, upsertProfile,
-  getDailyTasks, saveDailyTasks,
-  hasReportedToday, reportExecution as reportExecutionApi, getLeaderboard,
   getAnalyticsHistory, saveAnalyticsWeek,
-  getGrowthChecklist, saveGrowthChecklist,
   getCalendarMonth, saveCalendarDay,
   getTagList, addTagItem, removeTagItem,
-  getBoard, addBoardItem, moveBoardItem, removeBoardItem,
 } from "../lib/data";
 
 const TOKENS = {
@@ -38,22 +34,10 @@ const LAYERS = [
     problem: "我知道要發什麼，但我不會寫、不會規劃。",
     core: "這樣 AI 產出的內容才不會每個人都一樣——每位設計師都需要建立自己的個人資料。",
     features: ["AI 主題生成", "AI 三秒鉤子", "AI Reels 腳本", "AI IG 文案", "AI Threads 文案", "AI 限動腳本", "AI CTA", "AI 標題", "AI Hashtag", "AI 語氣調整", "AI 內容改寫"], live: true },
-  { n: "03", key: "production", name: "內容製作系統", en: "Content Production System", icon: Video,
-    problem: "我有內容，但製作很慢。",
-    core: "不只是影片剪輯系統，影片剪輯只是其中一個模組。",
-    features: ["AI 自動剪停頓", "自動字幕", "自動裁切 9:16", "人臉追蹤", "自動放大", "關鍵字強調", "品牌字幕模板", "Logo 與片尾", "封面模板", "輪播圖模板", "限動模板", "素材庫", "B-roll 資料庫"], live: true },
-  { n: "04", key: "publishing", name: "發布與執行系統", en: "Publishing & Execution System", icon: CalendarCheck2,
-    problem: "內容做完了，但沒有穩定發布。",
-    core: "很多設計師的問題不是不會，而是沒有固定執行。",
-    features: ["內容行事曆", "發布提醒", "草稿管理", "審核流程", "發布狀態", "每日任務", "每週任務", "主管審核", "團隊執行率", "社群挑戰", "排行榜"], live: true },
-  { n: "05", key: "analytics", name: "數據與轉換系統", en: "Performance & Conversion Analytics", icon: BarChart3,
+  { n: "03", key: "analytics", name: "數據與轉換系統", en: "Performance & Conversion Analytics", icon: BarChart3,
     problem: "我發了，但不知道有沒有用。",
     core: "不能只看流量，最重要的是要串到：社群內容 → 私訊 → 預約 → 到店 → 成交 → 回購。",
     features: ["觀看數", "完播率", "收藏率", "分享率", "留言率", "粉絲成長", "私訊詢問", "預約人數", "社群成交率", "社群營收", "內容類型分析", "個人趨勢分析", "團隊比較"], live: true },
-  { n: "06", key: "growth", name: "成長與教育系統", en: "Creator Growth System", icon: GraduationCap,
-    problem: "設計師如何持續變強？",
-    core: "透過分級制度，讓成長路徑看得見。",
-    features: ["社群能力分級", "學習課程", "任務驗收", "成長地圖", "個人能力評估", "每月社群診斷", "優秀案例學習", "主管回饋", "一對一輔導紀錄", "成長徽章與晉級條件"], live: true },
 ];
 
 const BASE_MODULES = [
@@ -62,7 +46,7 @@ const BASE_MODULES = [
   { name: "資料整合", icon: Link2, items: ["Instagram", "Threads", "TikTok", "LINE", "預約系統", "Google Calendar", "Notion", "CRM", "業績系統"], note: "未來可以串接的外部系統。" },
 ];
 
-const CYCLE = ["找到題目", "產出內容", "製作素材", "發布執行", "追蹤成效", "優化成長"];
+const CYCLE = ["找到題目", "產出內容", "追蹤成效"];
 
 const CONTENT_TYPES = [
   { id: "topic", label: "AI 主題生成", placeholder: "本週想聚焦的方向（可留空，AI 會依你的服務與客群發想）", optional: true },
@@ -89,23 +73,7 @@ const PROFILE_FIELDS = [
 
 const EMPTY_PROFILE = { service: "", audience: "", tone: "", price: "", trait: "", avoid: "" };
 
-const PRODUCTION_TYPES = [
-  { id: "cover", label: "封面模板文案", hint: "想放在封面上的主題或服務" },
-  { id: "carousel", label: "輪播圖文案", hint: "這組輪播想傳達的主題（AI 會拆成 5 張）" },
-  { id: "story", label: "限動模板文案", hint: "這則限動想呈現的內容" },
-];
-
-const BOARD_STATUSES = ["草稿", "待審核", "已排程", "已發布"];
-const DAILY_TASKS = ["發布一則內容", "回覆私訊詢問", "更新一則限動", "確認明日排程"];
 const FUNNEL_STEPS = ["社群內容", "私訊", "預約", "到店", "成交", "回購"];
-const GROWTH_LEVELS = [
-  { id: 1, label: "Lv1　穩定發布", criterion: "近一個月每週都有穩定發布內容" },
-  { id: 2, label: "Lv2　內容有明確定位", criterion: "已在 AI 社群助理設定目標客群與個人語氣" },
-  { id: 3, label: "Lv3　具備穩定觀看", criterion: "內容平均觀看數已達自訂目標" },
-  { id: 4, label: "Lv4　能帶來指定客", criterion: "近期有客人指定預約" },
-  { id: 5, label: "Lv5　建立個人品牌", criterion: "有穩定的個人風格與粉絲基礎" },
-  { id: 6, label: "Lv6　能帶領其他設計師", criterion: "有輔導其他設計師的實際經驗" },
-];
 
 function buildSystemPrompt(profile, type) {
   const filled = (v) => (v && v.trim() ? v.trim() : "未提供");
@@ -125,35 +93,6 @@ function buildSystemPrompt(profile, type) {
 3. 絕對不要使用「不想使用的詞彙」中列出的字詞。
 4. 內容最後要能自然引導對方私訊詢問或預約，但不要生硬推銷。
 5. 只輸出最終內容本身，不要加上任何說明、標題或引號。`;
-}
-
-function buildProductionPrompt(profile, type) {
-  const tone = profile.tone && profile.tone.trim() ? profile.tone.trim() : "親切自然";
-  if (type.id === "cover") {
-    return `你是 MULTIPLY 沙龍的社群美編顧問，要幫設計師寫「封面模板」上的文字。\n語氣風格：${tone}\n規則：\n1. 第一行輸出一句封面主標，繁體中文，不超過 12 個字，要吸睛。\n2. 第二行輸出一句輔助副標，不超過 18 個字。\n3. 不要加任何說明、引號或項目符號，只輸出這兩行。`;
-  }
-  if (type.id === "carousel") {
-    return `你是 MULTIPLY 沙龍的社群美編顧問，要幫設計師拆解一組「輪播圖文案」，共 5 張。\n語氣風格：${tone}\n規則：\n1. 輸出剛好 5 行，每行代表一張輪播圖的文字重點（10-16 字內）。\n2. 第 1 張要能勾起興趣，第 5 張要引導私訊或預約。\n3. 不要加任何說明、編號或項目符號，只輸出 5 行文字本身。`;
-  }
-  return `你是 MULTIPLY 沙龍的社群美編顧問，要幫設計師寫「限動模板」上的文字。\n語氣風格：${tone}\n規則：\n1. 輸出 2-3 行，模擬限動連續幾則的文字重點，逐行呈現。\n2. 語氣輕鬆即時，像在跟熟客聊天。\n3. 不要加任何說明或項目符號，只輸出文字本身。`;
-}
-
-function buildDiagnosisPrompt(profile, currentLevel, nextLevel) {
-  const filled = (v) => (v && v.trim() ? v.trim() : "未提供");
-  return `你是 MULTIPLY 沙龍的社群教育長，要為一位設計師做「每月社群診斷」。
-
-設計師資料：
-- 擅長服務：${filled(profile.service)}
-- 目標客群：${filled(profile.audience)}
-- 個人語氣：${filled(profile.tone)}
-- 目前分級：Lv${currentLevel}
-- 下一級目標：${nextLevel ? nextLevel.label + "（" + nextLevel.criterion + "）" : "已達最高分級"}
-
-規則：
-1. 全程繁體中文，語氣像資深教育長給予具體回饋，不要空泛鼓勵。
-2. 先用 2-3 句話診斷使用者提供的內容或數據摘要。
-3. 接著條列 3 點具體可執行的下一步建議，幫助他往下一級邁進。
-4. 不要加任何開場白或結語，直接輸出診斷與建議。`;
 }
 
 /* ---------- shared bits ---------- */
@@ -187,7 +126,7 @@ const primaryBtnStyle = (loading) => ({ display: "flex", alignItems: "center", j
 function Wheel({ active, onSelect }) {
   const R = 38;
   const nodes = LAYERS.map((layer, i) => {
-    const angle = (-90 + i * 60) * (Math.PI / 180);
+    const angle = (-90 + i * (360 / LAYERS.length)) * (Math.PI / 180);
     return { ...layer, x: 50 + R * Math.cos(angle), y: 50 + R * Math.sin(angle), i };
   });
   return (
@@ -236,7 +175,7 @@ function Overview({ onSelect }) {
       </div>
       <p style={{ textAlign: "center", color: TOKENS.inkDim, fontSize: 13.5, maxWidth: 520, margin: "18px auto 0", lineHeight: 1.8 }}>
         真正的核心是：讓設計師持續產出能帶來指定與成交的內容。<br />
-        六層節點皆已標示 <span style={{ color: TOKENS.gold }}>綠點</span>，代表可實際操作與儲存資料。
+        三層節點皆已標示 <span style={{ color: TOKENS.gold }}>綠點</span>，代表可實際操作與儲存資料。
       </p>
       <div style={{ marginTop: 48 }}>
         <SectionLabel>平台底層基礎模組</SectionLabel>
@@ -264,23 +203,6 @@ function Field({ label, value, onChange, placeholder }) {
     </div>
   );
 }
-function useDesignerProfile() {
-  const userId = useUserId();
-  const [profile, setProfile] = useState(EMPTY_PROFILE);
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      try {
-        const row = await getProfile(userId);
-        if (row) setProfile({ service: row.service || "", audience: row.audience || "", tone: row.tone || "", price: row.price || "", trait: row.trait || "", avoid: row.avoid || "" });
-      } catch (e) {}
-      finally { setLoaded(true); }
-    })();
-  }, [userId]);
-  return [profile, loaded];
-}
-
 /* ---------- Layer 02: AI Content Assistant ---------- */
 
 function AIAssistant() {
@@ -484,198 +406,7 @@ function ContentStrategyPanel() {
   );
 }
 
-/* ---------- Layer 03: Content Production ---------- */
-
-function ProductionPanel() {
-  const [profile] = useDesignerProfile();
-  const [typeId, setTypeId] = useState("cover");
-  const [topic, setTopic] = useState("");
-  const [output, setOutput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  const type = PRODUCTION_TYPES.find((t) => t.id === typeId);
-  const generate = async () => {
-    if (!topic.trim()) { setError("請先填寫這篇內容的主題。"); return; }
-    setError(""); setLoading(true); setOutput("");
-    try {
-      const text = await callClaude(buildProductionPrompt(profile, type), `主題：${topic}`, 500);
-      setOutput(text);
-    } catch (e) { setError(e.message || "生成失敗，請再試一次。"); } finally { setLoading(false); }
-  };
-  const copy = async () => { try { await navigator.clipboard.writeText(output); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
-  const lines = output.split("\n").filter(Boolean);
-  return (
-    <div style={{ marginTop: 8 }}>
-      <InfoNote>影片自動化功能（自動剪停頓、自動字幕、9:16 裁切、人臉追蹤等）需要真正的影片處理引擎，此原型尚未串接，僅呈現架構。以下「封面／輪播圖／限動」文案產生器已可實際使用，並會沿用你在 AI 社群助理設定的語氣。</InfoNote>
-      <div className="grid-sidebar" style={{ marginTop: 16 }}>
-        <div style={cardStyle}>
-          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12 }}>模板類型</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>{PRODUCTION_TYPES.map((t) => <button key={t.id} onClick={() => setTypeId(t.id)} style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12.5, border: `1px solid ${typeId === t.id ? TOKENS.gold : TOKENS.line}`, background: typeId === t.id ? TOKENS.gold : "transparent", color: typeId === t.id ? TOKENS.bg : TOKENS.inkDim, cursor: "pointer" }}>{t.label}</button>)}</div>
-          <label style={{ display: "block", fontSize: 12, color: TOKENS.inkFaint, marginBottom: 6 }}>{type.hint}</label>
-          <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={3} placeholder="輸入主題…" style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-          {error && <p style={{ color: "#C77A6B", fontSize: 12.5, margin: "10px 0 0" }}>{error}</p>}
-          <button onClick={generate} disabled={loading} style={{ ...primaryBtnStyle(loading), width: "100%", marginTop: 14, fontSize: 14 }}>{loading ? <Loader2 size={16} className="spin" /> : <ImageIcon size={16} />}{loading ? "生成中…" : "產出文案"}</button>
-        </div>
-        <div style={{ ...cardStyle, minHeight: 320, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>產出結果 — {type.label}</span>
-            {output && !loading && <div style={{ display: "flex", gap: 8 }}><button onClick={generate} title="重新產出" style={iconBtnStyle}><RefreshCw size={14} /></button><button onClick={copy} title="複製" style={iconBtnStyle}>{copied ? <Check size={14} color={TOKENS.gold} /> : <Copy size={14} />}</button></div>}
-          </div>
-          {loading ? <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }}>{[100, 70].map((w, i) => <div key={i} className="pulse-bar" style={{ height: 14, width: `${w}%`, borderRadius: 6, background: TOKENS.bgElev }} />)}</div>
-            : output ? (typeId === "cover" ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ width: "100%", maxWidth: 220, aspectRatio: "4/5", borderRadius: 14, background: `linear-gradient(160deg, ${TOKENS.goldDim}, ${TOKENS.bgElev})`, border: `1px solid ${TOKENS.gold}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 }}>
-                  <span style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 22, fontWeight: 700, color: TOKENS.ink, lineHeight: 1.4 }}>{lines[0]}</span>
-                  {lines[1] && <span style={{ fontSize: 13, color: TOKENS.inkDim, marginTop: 10 }}>{lines[1]}</span>}
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{lines.map((l, i) => <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: TOKENS.bgElev, borderRadius: 8, padding: "8px 12px" }}><span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: TOKENS.gold }}>{String(i + 1).padStart(2, "0")}</span><span style={{ fontSize: 13.5, color: TOKENS.ink }}>{l}</span></div>)}</div>
-            )) : <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: TOKENS.inkFaint, textAlign: "center" }}><ImageIcon size={26} strokeWidth={1.3} style={{ marginBottom: 10, opacity: 0.6 }} /><p style={{ fontSize: 13, margin: 0, maxWidth: 240, lineHeight: 1.8 }}>選擇模板類型並輸入主題，按下「產出文案」查看結果。</p></div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Layer 04: Publishing & Execution ---------- */
-
-function PublishingPanel() {
-  const userId = useUserId();
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const [nickname, setNickname] = useState("");
-  const nicknameTimeout = useRef(null);
-  const [board, setBoard] = useState([]);
-  const [newTitle, setNewTitle] = useState("");
-  const [tasksDone, setTasksDone] = useState({});
-  const [reportedToday, setReportedToday] = useState(false);
-  const [leaderboard, setLeaderboard] = useState([]);
-
-  const loadBoard = async () => { try { setBoard(await getBoard()); } catch (e) {} };
-  const loadLeaderboard = async () => { try { setLeaderboard(await getLeaderboard()); } catch (e) {} };
-
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      try { const row = await getProfile(userId); if (row) setNickname(row.nickname || ""); } catch (e) {}
-      try { setTasksDone(await getDailyTasks(userId, todayKey)); } catch (e) {}
-      try { setReportedToday(await hasReportedToday(userId, todayKey)); } catch (e) {}
-      await loadBoard();
-      await loadLeaderboard();
-    })();
-  }, [userId]);
-
-  const saveNickname = (v) => {
-    setNickname(v);
-    if (nicknameTimeout.current) clearTimeout(nicknameTimeout.current);
-    nicknameTimeout.current = setTimeout(() => { upsertProfile(userId, { nickname: v }).catch(() => {}); }, 700);
-  };
-  const addItem = async () => {
-    if (!newTitle.trim()) return;
-    const title = newTitle.trim();
-    setNewTitle("");
-    try { await addBoardItem(userId, title, nickname || "未命名"); await loadBoard(); } catch (e) {}
-  };
-  const moveItem = async (id, dir) => {
-    const item = board.find((it) => it.id === id);
-    if (!item) return;
-    const idx = BOARD_STATUSES.indexOf(item.status);
-    const ni = Math.min(BOARD_STATUSES.length - 1, Math.max(0, idx + dir));
-    try { await moveBoardItem(id, BOARD_STATUSES[ni]); await loadBoard(); } catch (e) {}
-  };
-  const removeItem = async (id) => { try { await removeBoardItem(id); await loadBoard(); } catch (e) {} };
-  const toggleTask = (i) => {
-    const next = { ...tasksDone, [i]: !tasksDone[i] };
-    setTasksDone(next);
-    saveDailyTasks(userId, todayKey, next).catch(() => {});
-  };
-  const doneCount = DAILY_TASKS.filter((_, i) => tasksDone[i]).length;
-  const allDone = doneCount === DAILY_TASKS.length;
-
-  const doReportExecution = async () => {
-    if (!nickname.trim()) return;
-    try {
-      await reportExecutionApi(userId, nickname, todayKey);
-      await loadLeaderboard();
-      setReportedToday(true);
-    } catch (e) {}
-  };
-
-  const sortedLeaders = leaderboard;
-
-  return (
-    <div style={{ marginTop: 8 }}>
-      <InfoNote>草稿看板與排行榜屬於團隊共用資料，所有使用者都看得到。個人資料與每日任務打勾狀態僅你自己看得到。</InfoNote>
-
-      <div style={{ ...cardStyle, marginTop: 16, marginBottom: 16 }}>
-        <label style={{ display: "block", fontSize: 12, color: TOKENS.inkFaint, marginBottom: 6 }}>你的暱稱（用於排行榜與看板署名）</label>
-        <input value={nickname} onChange={(e) => saveNickname(e.target.value)} placeholder="例如：小豪" style={{ ...inputStyle, maxWidth: 260 }} />
-      </div>
-
-      <SectionLabel>草稿與發布看板</SectionLabel>
-      <div style={{ display: "flex", gap: 8, margin: "14px 0" }}>
-        <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addItem(); }} placeholder="新增一則內容草稿…" style={{ flex: 1, ...inputStyle }} />
-        <button onClick={addItem} style={{ ...iconBtnStyle, width: 36, height: 36 }}><Plus size={16} /></button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 32 }}>
-        {BOARD_STATUSES.map((status, colIdx) => (
-          <div key={status} style={cardStyle}>
-            <div style={{ fontSize: 11.5, letterSpacing: "0.08em", color: TOKENS.gold, fontFamily: "'JetBrains Mono', monospace", marginBottom: 10 }}>{status}</div>
-            {board.filter((it) => it.status === status).length === 0 && <span style={{ fontSize: 12, color: TOKENS.inkFaint }}>—</span>}
-            {board.filter((it) => it.status === status).map((it) => (
-              <div key={it.id} style={{ background: TOKENS.bgElev, borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
-                <div style={{ fontSize: 12.5, color: TOKENS.ink, marginBottom: 6, lineHeight: 1.5 }}>{it.title}</div>
-                <div style={{ fontSize: 10.5, color: TOKENS.inkFaint, marginBottom: 6 }}>{it.owner_nickname}</div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {colIdx > 0 && <button onClick={() => moveItem(it.id, -1)} title="上一階段" style={{ ...iconBtnStyle, width: 22, height: 22 }}><ChevronLeft size={12} /></button>}
-                  {colIdx < BOARD_STATUSES.length - 1 && <button onClick={() => moveItem(it.id, 1)} title="下一階段" style={{ ...iconBtnStyle, width: 22, height: 22 }}><ChevronRightIcon size={12} /></button>}
-                  <button onClick={() => removeItem(it.id)} title="刪除" style={{ ...iconBtnStyle, width: 22, height: 22 }}><X size={12} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid-2col">
-        <div>
-          <SectionLabel>每日任務</SectionLabel>
-          <div style={{ ...cardStyle, marginTop: 14 }}>
-            {DAILY_TASKS.map((t, i) => (
-              <label key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, fontSize: 13, color: TOKENS.ink, cursor: "pointer" }}>
-                <input type="checkbox" checked={!!tasksDone[i]} onChange={() => toggleTask(i)} style={{ accentColor: TOKENS.gold, width: 15, height: 15 }} />
-                {t}
-              </label>
-            ))}
-            <div style={{ height: 6, background: TOKENS.bgElev, borderRadius: 4, overflow: "hidden", margin: "10px 0" }}>
-              <div style={{ width: `${(doneCount / DAILY_TASKS.length) * 100}%`, height: "100%", background: `linear-gradient(90deg, ${TOKENS.goldDim}, ${TOKENS.gold})` }} />
-            </div>
-            <button onClick={doReportExecution} disabled={!allDone || reportedToday || !nickname.trim()} style={{ ...primaryBtnStyle(false), width: "100%", opacity: !allDone || reportedToday || !nickname.trim() ? 0.5 : 1, cursor: !allDone || reportedToday || !nickname.trim() ? "default" : "pointer" }}>
-              {reportedToday ? "今日已回報" : "回報今日執行"}
-            </button>
-            {!nickname.trim() && <p style={{ fontSize: 11, color: TOKENS.inkFaint, marginTop: 8 }}>請先填寫上方暱稱才能回報。</p>}
-          </div>
-        </div>
-        <div>
-          <SectionLabel>團隊執行排行榜</SectionLabel>
-          <div style={{ ...cardStyle, marginTop: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><Trophy size={14} color={TOKENS.gold} /><span style={{ fontSize: 11, color: TOKENS.inkFaint }}>依累積回報天數排序</span></div>
-            {sortedLeaders.length === 0 && <span style={{ fontSize: 12.5, color: TOKENS.inkFaint }}>尚無回報紀錄</span>}
-            {sortedLeaders.map((entry, i) => (
-              <div key={entry.nickname + i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < sortedLeaders.length - 1 ? `1px solid ${TOKENS.line}` : "none" }}>
-                <span style={{ fontSize: 13, color: TOKENS.ink }}><span style={{ color: TOKENS.gold, fontFamily: "'JetBrains Mono', monospace", marginRight: 8 }}>{String(i + 1).padStart(2, "0")}</span>{entry.nickname}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: TOKENS.inkDim }}>{entry.count} 天</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Layer 05: Performance & Conversion Analytics ---------- */
+/* ---------- Layer 03: Performance & Conversion Analytics ---------- */
 
 function AnalyticsPanel() {
   const userId = useUserId();
@@ -746,82 +477,6 @@ function AnalyticsPanel() {
   );
 }
 
-/* ---------- Layer 06: Creator Growth System ---------- */
-
-function GrowthPanel() {
-  const userId = useUserId();
-  const [profile] = useDesignerProfile();
-  const [checks, setChecks] = useState({});
-  useEffect(() => {
-    if (!userId) return;
-    (async () => { try { setChecks(await getGrowthChecklist(userId)); } catch (e) {} })();
-  }, [userId]);
-  const toggle = (id) => {
-    const next = { ...checks, [id]: !checks[id] };
-    setChecks(next);
-    saveGrowthChecklist(userId, next).catch(() => {});
-  };
-
-  const profileFilled = !!(profile.audience && profile.tone);
-  let currentLevel = 0;
-  for (const lv of GROWTH_LEVELS) {
-    const achieved = lv.id === 2 ? (checks[2] || profileFilled) : checks[lv.id];
-    if (achieved) currentLevel = lv.id; else break;
-  }
-  const nextLevel = GROWTH_LEVELS.find((l) => l.id === currentLevel + 1);
-
-  const [diagInput, setDiagInput] = useState("");
-  const [diagnosis, setDiagnosis] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const generateDiagnosis = async () => {
-    if (!diagInput.trim()) { setError("請先貼上近期的內容或數據摘要。"); return; }
-    setError(""); setLoading(true); setDiagnosis("");
-    try {
-      const text = await callClaude(buildDiagnosisPrompt(profile, currentLevel, nextLevel), diagInput, 700);
-      setDiagnosis(text);
-    } catch (e) { setError(e.message || "生成失敗，請再試一次。"); } finally { setLoading(false); }
-  };
-
-  return (
-    <div style={{ marginTop: 8 }}>
-      <InfoNote>分級由下方自我評估勾選決定（Lv2 會自動偵測你在 AI 社群助理是否已填寫個人資料）。診斷結果不存資料，僅供當次參考。</InfoNote>
-
-      <div style={{ marginTop: 16, position: "relative", paddingLeft: 22 }}>
-        <div style={{ position: "absolute", left: 5, top: 6, bottom: 6, width: 1, background: TOKENS.line }} />
-        {GROWTH_LEVELS.map((lv) => {
-          const isCurrent = lv.id === currentLevel;
-          const achieved = lv.id === 2 ? (checks[2] || profileFilled) : checks[lv.id];
-          return (
-            <div key={lv.id} style={{ position: "relative", marginBottom: 16 }}>
-              <div style={{ position: "absolute", left: -22 + 1, top: 3, width: 10, height: 10, borderRadius: "50%", background: isCurrent ? TOKENS.gold : TOKENS.bg, border: `1px solid ${TOKENS.gold}` }} />
-              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: lv.id === 2 ? "default" : "pointer" }}>
-                {lv.id !== 2 && <input type="checkbox" checked={!!checks[lv.id]} onChange={() => toggle(lv.id)} style={{ accentColor: TOKENS.gold, width: 15, height: 15 }} />}
-                {lv.id === 2 && <input type="checkbox" checked={achieved} disabled style={{ accentColor: TOKENS.gold, width: 15, height: 15, opacity: 0.6 }} />}
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, color: isCurrent ? TOKENS.gold : TOKENS.ink }}>{lv.label}</span>
-                {isCurrent && <span style={{ fontSize: 11, color: TOKENS.inkFaint, border: `1px solid ${TOKENS.line}`, borderRadius: 6, padding: "1px 7px" }}>目前等級</span>}
-              </label>
-              <p style={{ margin: "4px 0 0 25px", fontSize: 12, color: TOKENS.inkFaint }}>{lv.criterion}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ marginTop: 24 }}>
-        <SectionLabel>AI 每月社群診斷</SectionLabel>
-        <div style={{ ...cardStyle, marginTop: 14 }}>
-          <label style={{ display: "block", fontSize: 12, color: TOKENS.inkFaint, marginBottom: 6 }}>貼上近期發布狀況、數據或遇到的困難</label>
-          <textarea value={diagInput} onChange={(e) => setDiagInput(e.target.value)} rows={4} placeholder="例如：這個月發了 8 篇，平均觀看數比上月下降，私訊變少…" style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-          {error && <p style={{ color: "#C77A6B", fontSize: 12.5, margin: "10px 0 0" }}>{error}</p>}
-          <button onClick={generateDiagnosis} disabled={loading} style={{ ...primaryBtnStyle(loading), marginTop: 12 }}>{loading ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}{loading ? "診斷中…" : "產生診斷"}</button>
-          {loading && <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>{[100, 85, 92].map((w, i) => <div key={i} className="pulse-bar" style={{ height: 12, width: `${w}%`, borderRadius: 6, background: TOKENS.bgElev }} />)}</div>}
-          {diagnosis && !loading && <p style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.9, color: TOKENS.ink, marginTop: 16 }}>{diagnosis}</p>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ---------- layer detail ---------- */
 
 function LayerDetail({ layer, onBack }) {
@@ -843,10 +498,7 @@ function LayerDetail({ layer, onBack }) {
 
       {layer.key === "strategy" && <ContentStrategyPanel />}
       {layer.key === "ai" && <AIAssistant />}
-      {layer.key === "production" && <ProductionPanel />}
-      {layer.key === "publishing" && <PublishingPanel />}
       {layer.key === "analytics" && <AnalyticsPanel />}
-      {layer.key === "growth" && <GrowthPanel />}
     </div>
   );
 }
@@ -864,13 +516,13 @@ export default function MultiplyCreatorOS({ user }) {
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 6, position: "relative" }}>
             <Sparkles size={14} color={TOKENS.gold} />
-            <span style={{ fontSize: 11.5, letterSpacing: "0.14em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>ALL 6 LAYERS LIVE</span>
+            <span style={{ fontSize: 11.5, letterSpacing: "0.14em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>ALL 3 LAYERS LIVE</span>
             <button onClick={signOut} title="登出" style={{ position: "absolute", right: 0, display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${TOKENS.line}`, borderRadius: 999, padding: "5px 12px", color: TOKENS.inkDim, fontSize: 11.5, cursor: "pointer" }}>
               <LogOut size={12} /> 登出
             </button>
           </div>
           <h1 style={{ textAlign: "center", fontFamily: "'Noto Serif TC', serif", fontSize: "clamp(26px,5vw,38px)", fontWeight: 700, margin: "0 0 10px" }}>MULTIPLY Creator OS</h1>
-          <p style={{ textAlign: "center", color: TOKENS.inkDim, fontSize: 14.5, margin: "0 0 8px" }}>六層內容作業系統 — 從找到題目，到再進入下一輪</p>
+          <p style={{ textAlign: "center", color: TOKENS.inkDim, fontSize: 14.5, margin: "0 0 8px" }}>三層內容作業系統 — 從找到題目，到再進入下一輪</p>
           {user?.email && <p style={{ textAlign: "center", color: TOKENS.inkFaint, fontSize: 12, margin: "0 0 24px" }}>{user.email}</p>}
           <PillNav active={active} onSelect={setActive} />
           <div style={{ background: TOKENS.bgElev, border: `1px solid ${TOKENS.line}`, borderRadius: 20, padding: "clamp(24px,4vw,44px)" }}>
