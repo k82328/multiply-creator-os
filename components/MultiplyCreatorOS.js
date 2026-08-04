@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useContext } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Target, Bot, BarChart3,
+  Bot, BarChart3,
   Users, BookOpen, Link2, ArrowRight, ChevronLeft, Sparkles,
   Wand2, Copy, Check, RefreshCw, Loader2, MessageSquareText,
-  Plus, X, CalendarDays,
-  LogOut,
+  X, LogOut,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { callClaude } from "../lib/claude";
@@ -15,8 +14,6 @@ import { UserIdContext, useUserId } from "../lib/UserIdContext";
 import {
   getProfile, upsertProfile,
   getAnalyticsHistory, saveAnalyticsWeek,
-  getCalendarMonth, saveCalendarDay,
-  getTagList, addTagItem, removeTagItem,
 } from "../lib/data";
 
 const TOKENS = {
@@ -26,15 +23,11 @@ const TOKENS = {
 };
 
 const LAYERS = [
-  { n: "01", key: "strategy", name: "內容策略系統", en: "Content Strategy System", icon: Target,
-    problem: "我今天要發什麼？",
-    core: "這一層的核心不是「題庫」，而是讓每位設計師知道：對誰說、說什麼、為什麼值得看、最後要引導什麼。",
-    features: ["每日內容題目", "月度內容行事曆", "內容分類", "客群痛點資料庫", "服務主題資料庫", "爆款案例拆解", "品牌內容方向", "個人定位設定", "成功內容模板"], live: true },
-  { n: "02", key: "ai", name: "AI 社群助理", en: "AI Content Assistant", icon: Bot,
-    problem: "我知道要發什麼，但我不會寫、不會規劃。",
-    core: "這樣 AI 產出的內容才不會每個人都一樣——每位設計師都需要建立自己的個人資料。",
-    features: ["AI 主題生成", "AI 三秒鉤子", "AI Reels 腳本", "AI IG 文案", "AI Threads 文案", "AI 限動腳本", "AI CTA", "AI 標題", "AI Hashtag", "AI 語氣調整", "AI 內容改寫"], live: true },
-  { n: "03", key: "analytics", name: "數據與轉換系統", en: "Performance & Conversion Analytics", icon: BarChart3,
+  { n: "01", key: "content", name: "內容策略與 AI 助理", en: "Content Strategy & AI Assistant", icon: Bot,
+    problem: "我今天要發什麼？寫出來又怕不像我。",
+    core: "設定好你的個人資料，AI 就能先幫你想題目，再直接把選中的題目寫成貼文——從發想到成稿一次完成。",
+    features: ["設計師個人資料", "AI 每日內容題目", "AI 三秒鉤子", "AI Reels 腳本", "AI IG 文案", "AI Threads 文案", "AI 限動腳本", "AI CTA", "AI 標題", "AI Hashtag", "AI 語氣調整", "AI 內容改寫"], live: true },
+  { n: "02", key: "analytics", name: "數據與轉換系統", en: "Performance & Conversion Analytics", icon: BarChart3,
     problem: "我發了，但不知道有沒有用。",
     core: "不能只看流量，最重要的是要串到：社群內容 → 私訊 → 預約 → 到店 → 成交 → 回購。",
     features: ["觀看數", "完播率", "收藏率", "分享率", "留言率", "粉絲成長", "私訊詢問", "預約人數", "社群成交率", "社群營收", "內容類型分析", "個人趨勢分析", "團隊比較"], live: true },
@@ -49,7 +42,6 @@ const BASE_MODULES = [
 const CYCLE = ["找到題目", "產出內容", "追蹤成效"];
 
 const CONTENT_TYPES = [
-  { id: "topic", label: "AI 主題生成", placeholder: "本週想聚焦的方向（可留空，AI 會依你的服務與客群發想）", optional: true },
   { id: "hook", label: "AI 三秒鉤子", placeholder: "這篇內容想圍繞什麼主題或服務？" },
   { id: "reels", label: "AI Reels 腳本", placeholder: "想拍的主題、服務或客群痛點" },
   { id: "ig", label: "AI IG 文案", placeholder: "這篇貼文想傳達的重點" },
@@ -93,6 +85,25 @@ function buildSystemPrompt(profile, type) {
 3. 絕對不要使用「不想使用的詞彙」中列出的字詞。
 4. 內容最後要能自然引導對方私訊詢問或預約，但不要生硬推銷。
 5. 只輸出最終內容本身，不要加上任何說明、標題或引號。`;
+}
+
+function buildDailyTopicsPrompt(profile) {
+  const filled = (v) => (v && v.trim() ? v.trim() : "未提供");
+  return `你是 MULTIPLY 沙龍的社群內容策略顧問，要根據一位設計師的個人資料，幫他發想「每日內容題目」。
+
+設計師個人資料：
+- 擅長服務：${filled(profile.service)}
+- 目標客群：${filled(profile.audience)}
+- 個人語氣：${filled(profile.tone)}
+- 客單價：${filled(profile.price)}
+- 個人特色：${filled(profile.trait)}
+- 不想使用的詞彙：${filled(profile.avoid)}
+
+規則：
+1. 全程繁體中文。
+2. 輸出剛好 5 個題目，每行一個，格式為「題目 — 一句話說明為什麼值得看」。
+3. 不要加編號或項目符號。
+4. 絕對不要使用「不想使用的詞彙」中列出的字詞。`;
 }
 
 /* ---------- shared bits ---------- */
@@ -175,7 +186,7 @@ function Overview({ onSelect }) {
       </div>
       <p style={{ textAlign: "center", color: TOKENS.inkDim, fontSize: 13.5, maxWidth: 520, margin: "18px auto 0", lineHeight: 1.8 }}>
         真正的核心是：讓設計師持續產出能帶來指定與成交的內容。<br />
-        三層節點皆已標示 <span style={{ color: TOKENS.gold }}>綠點</span>，代表可實際操作與儲存資料。
+        兩層節點皆已標示 <span style={{ color: TOKENS.gold }}>綠點</span>，代表可實際操作與儲存資料。
       </p>
       <div style={{ marginTop: 48 }}>
         <SectionLabel>平台底層基礎模組</SectionLabel>
@@ -193,7 +204,7 @@ function Overview({ onSelect }) {
   );
 }
 
-/* ---------- shared: designer profile hook ---------- */
+/* ---------- shared: profile field ---------- */
 
 function Field({ label, value, onChange, placeholder }) {
   return (
@@ -203,14 +214,22 @@ function Field({ label, value, onChange, placeholder }) {
     </div>
   );
 }
-/* ---------- Layer 02: AI Content Assistant ---------- */
 
-function AIAssistant() {
+/* ---------- Layer 01: Content Strategy & AI Assistant ---------- */
+
+function ContentPanel() {
   const userId = useUserId();
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [saveState, setSaveState] = useState("idle");
   const saveTimeout = useRef(null);
+
+  const [topicFocus, setTopicFocus] = useState("");
+  const [topics, setTopics] = useState([]);
+  const [selectedTopicIndex, setSelectedTopicIndex] = useState(null);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicsError, setTopicsError] = useState("");
+
   const [typeId, setTypeId] = useState("ig");
   const [topic, setTopic] = useState("");
   const [output, setOutput] = useState("");
@@ -238,11 +257,36 @@ function AIAssistant() {
   const setProfileField = (key, value) => {
     setProfile((prev) => { const next = { ...prev, [key]: value }; if (saveTimeout.current) clearTimeout(saveTimeout.current); saveTimeout.current = setTimeout(() => persist(next), 700); return next; });
   };
+
+  const generateTopics = async () => {
+    setTopicsError(""); setTopicsLoading(true); setTopics([]); setSelectedTopicIndex(null);
+    try {
+      const response = await callClaude(
+        buildDailyTopicsPrompt(profile),
+        topicFocus.trim() ? `這次想聚焦：${topicFocus.trim()}` : "請自由發想本週題目",
+        600
+      );
+      const lines = response.split("\n").map((l) => l.replace(/^[\-•\d\.\s]+/, "").trim()).filter(Boolean);
+      const parsed = lines.map((l) => {
+        const idx = l.search(/[—-]/);
+        if (idx === -1) return { title: l, reason: "" };
+        return { title: l.slice(0, idx).trim(), reason: l.slice(idx + 1).replace(/^[—-]\s*/, "").trim() };
+      });
+      if (!parsed.length) throw new Error("AI 回傳了空白內容，請再試一次。");
+      setTopics(parsed);
+    } catch (e) { setTopicsError(e.message || "生成失敗，請再試一次。"); } finally { setTopicsLoading(false); }
+  };
+
+  const selectTopic = (i) => {
+    setSelectedTopicIndex(i);
+    setTopic(topics[i].title);
+  };
+
   const generate = async () => {
-    if (!type.optional && !topic.trim()) { setError("請先填寫內容需求，AI 才知道要寫什麼。"); return; }
+    if (!topic.trim()) { setError("請先選一個題目，或直接填寫內容需求。"); return; }
     setError(""); setLoading(true); setOutput("");
     try {
-      const userMessage = type.needsSource ? `原始文案：\n${topic}` : topic.trim() ? `主題／需求：${topic}` : `請依照我的個人資料，發想一則適合的社群主題與內容方向。`;
+      const userMessage = type.needsSource ? `原始文案：\n${topic}` : `主題／需求：${topic}`;
       const text = await callClaude(buildSystemPrompt(profile, type), userMessage, 1000);
       setOutput(text);
     } catch (e) { setError(e.message || "生成失敗，請再試一次。"); } finally { setLoading(false); }
@@ -251,7 +295,8 @@ function AIAssistant() {
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div className="grid-sidebar">
+      <InfoNote>AI 生成全部根據下方的個人資料客製化。先產生每日題目、選一個，再挑內容類型，就能直接產出成稿。</InfoNote>
+      <div className="grid-sidebar" style={{ marginTop: 16 }}>
         <div>
           <div style={{ ...cardStyle, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -260,13 +305,33 @@ function AIAssistant() {
             </div>
             {PROFILE_FIELDS.map((f) => <Field key={f.key} label={f.label} value={profile[f.key]} onChange={(v) => setProfileField(f.key, v)} placeholder={f.placeholder} />)}
           </div>
+
+          <div style={{ ...cardStyle, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 10 }}>AI 每日內容題目</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <input value={topicFocus} onChange={(e) => setTopicFocus(e.target.value)} placeholder="想聚焦的方向（可留空）" style={{ flex: 1, ...inputStyle }} />
+              <button onClick={generateTopics} disabled={topicsLoading} style={primaryBtnStyle(topicsLoading)}>{topicsLoading ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />} 產生</button>
+            </div>
+            {topicsError && <p style={{ color: "#C77A6B", fontSize: 12.5, margin: "0 0 8px" }}>{topicsError}</p>}
+            {topics.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {topics.map((t, i) => (
+                  <button key={i} onClick={() => selectTopic(i)} style={{ textAlign: "left", padding: "8px 10px", borderRadius: 8, border: `1px solid ${selectedTopicIndex === i ? TOKENS.gold : TOKENS.line}`, background: selectedTopicIndex === i ? "rgba(201,160,99,0.14)" : TOKENS.bgElev, cursor: "pointer" }}>
+                    <span style={{ fontSize: 12.5, color: selectedTopicIndex === i ? TOKENS.gold : TOKENS.ink, fontWeight: 600 }}>{t.title}</span>
+                    {t.reason && <span style={{ fontSize: 12.5, color: TOKENS.inkFaint }}> — {t.reason}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div style={cardStyle}>
             <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12 }}>內容類型</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>
               {CONTENT_TYPES.map((t) => <button key={t.id} onClick={() => setTypeId(t.id)} style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12.5, border: `1px solid ${typeId === t.id ? TOKENS.gold : TOKENS.line}`, background: typeId === t.id ? TOKENS.gold : "transparent", color: typeId === t.id ? TOKENS.bg : TOKENS.inkDim, cursor: "pointer" }}>{t.label}</button>)}
             </div>
             <label style={{ display: "block", fontSize: 12, color: TOKENS.inkFaint, marginBottom: 6 }}>{type.placeholder}</label>
-            <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={4} placeholder={type.needsSource ? "貼上原始文案內容…" : "輸入需求…"} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+            <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={4} placeholder={type.needsSource ? "貼上原始文案內容…" : "選一個上方的題目，或直接輸入需求…"} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
             {error && <p style={{ color: "#C77A6B", fontSize: 12.5, margin: "10px 0 0" }}>{error}</p>}
             <button onClick={generate} disabled={loading} style={{ ...primaryBtnStyle(loading), width: "100%", marginTop: 14, fontSize: 14 }}>{loading ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}{loading ? "生成中…" : "產出內容"}</button>
           </div>
@@ -278,135 +343,14 @@ function AIAssistant() {
           </div>
           {loading ? <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }}>{[100, 88, 92, 60].map((w, i) => <div key={i} className="pulse-bar" style={{ height: 12, width: `${w}%`, borderRadius: 6, background: TOKENS.bgElev }} />)}</div>
             : output ? <p style={{ whiteSpace: "pre-wrap", fontSize: 14.5, lineHeight: 1.9, color: TOKENS.ink, margin: 0 }}>{output}</p>
-            : <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: TOKENS.inkFaint, textAlign: "center" }}><MessageSquareText size={26} strokeWidth={1.3} style={{ marginBottom: 10, opacity: 0.6 }} /><p style={{ fontSize: 13, margin: 0, maxWidth: 240, lineHeight: 1.8 }}>填寫左側個人資料與需求，按下「產出內容」查看結果。</p></div>}
+            : <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: TOKENS.inkFaint, textAlign: "center" }}><MessageSquareText size={26} strokeWidth={1.3} style={{ marginBottom: 10, opacity: 0.6 }} /><p style={{ fontSize: 13, margin: 0, maxWidth: 240, lineHeight: 1.8 }}>先產生每日題目並選一個，或直接填寫需求，按下「產出內容」查看結果。</p></div>}
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------- Layer 01: Content Strategy ---------- */
-
-function TagEditor({ label, listKey, hint }) {
-  const userId = useUserId();
-  const [items, setItems] = useState([]);
-  const [input, setInput] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const load = async () => { try { setItems(await getTagList(listKey)); } catch (e) {} };
-  useEffect(() => { (async () => { await load(); setLoaded(true); })(); }, [listKey]);
-  const add = async () => { const v = input.trim(); if (!v) return; setInput(""); try { await addTagItem(userId, listKey, v); await load(); } catch (e) {} };
-  const remove = async (id) => { try { await removeTagItem(id); await load(); } catch (e) {} };
-  return (
-    <div style={{ ...cardStyle, marginBottom: 14 }}>
-      <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 10 }}>{label}</div>
-      <div style={{ marginBottom: 10 }}>{loaded && items.length === 0 && <span style={{ fontSize: 12.5, color: TOKENS.inkFaint }}>尚未新增項目</span>}{items.map((it) => <Chip key={it.id} onRemove={() => remove(it.id)}>{it.label}</Chip>)}</div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder={hint} style={{ flex: 1, ...inputStyle }} />
-        <button onClick={add} style={{ ...iconBtnStyle, width: 36, height: 36 }}><Plus size={16} /></button>
-      </div>
-    </div>
-  );
-}
-function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(); }
-function ContentCalendar() {
-  const userId = useUserId();
-  const now = new Date();
-  const [year] = useState(now.getFullYear());
-  const [month] = useState(now.getMonth());
-  const [calendar, setCalendar] = useState({});
-  const [selectedDay, setSelectedDay] = useState(null);
-  const [draft, setDraft] = useState("");
-  useEffect(() => { (async () => { try { setCalendar(await getCalendarMonth(year, month + 1)); } catch (e) {} })(); }, [year, month]);
-  const openDay = (d) => { setSelectedDay(d); setDraft(calendar[d] || ""); };
-  const saveDay = async () => {
-    try {
-      await saveCalendarDay(userId, year, month + 1, selectedDay, draft);
-      const next = { ...calendar };
-      if (draft.trim()) next[selectedDay] = draft.trim(); else delete next[selectedDay];
-      setCalendar(next);
-    } catch (e) {}
-    setSelectedDay(null);
-  };
-  const total = daysInMonth(year, month);
-  const firstWeekday = new Date(year, month, 1).getDay();
-  const cells = [...Array(firstWeekday).fill(null), ...Array.from({ length: total }, (_, i) => i + 1)];
-  return (
-    <div style={cardStyle}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}><CalendarDays size={14} color={TOKENS.gold} /><span style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>{year} 年 {month + 1} 月內容行事曆</span></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 4 }}>{["日", "一", "二", "三", "四", "五", "六"].map((d) => <div key={d} style={{ textAlign: "center", fontSize: 11, color: TOKENS.inkFaint }}>{d}</div>)}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>
-        {cells.map((d, i) => d === null ? <div key={i} /> : (
-          <button key={i} onClick={() => openDay(d)} style={{ aspectRatio: "1/1", borderRadius: 8, border: `1px solid ${selectedDay === d ? TOKENS.gold : TOKENS.line}`, background: calendar[d] ? "rgba(201,160,99,0.14)" : TOKENS.bgElev, color: TOKENS.ink, fontSize: 12, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 2 }}>
-            <span>{d}</span>{calendar[d] && <span style={{ width: 4, height: 4, borderRadius: "50%", background: TOKENS.gold, marginTop: 2 }} />}
-          </button>
-        ))}
-      </div>
-      {selectedDay && (
-        <div style={{ marginTop: 16, borderTop: `1px solid ${TOKENS.line}`, paddingTop: 14 }}>
-          <div style={{ fontSize: 12, color: TOKENS.inkFaint, marginBottom: 8 }}>{month + 1} 月 {selectedDay} 日的內容主題</div>
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} placeholder="輸入或貼上這天要發的主題…" style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={saveDay} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: TOKENS.gold, color: TOKENS.bg, fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>儲存</button>
-            <button onClick={() => setSelectedDay(null)} style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${TOKENS.line}`, background: "transparent", color: TOKENS.inkDim, fontSize: 12.5, cursor: "pointer" }}>取消</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-function DailyTopicGenerator() {
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [ideas, setIdeas] = useState([]);
-  const [error, setError] = useState("");
-  const generate = async () => {
-    setLoading(true); setError(""); setIdeas([]);
-    try {
-      let dbContext = "";
-      try {
-        const [cats, pains, topics] = await Promise.all([
-          getTagList("content-categories").catch(() => []),
-          getTagList("pain-points").catch(() => []),
-          getTagList("service-topics").catch(() => []),
-        ]);
-        const j = (list) => list.map((it) => it.label).join("、");
-        dbContext = `內容分類：${j(cats) || "未提供"}\n客群痛點：${j(pains) || "未提供"}\n服務主題：${j(topics) || "未提供"}`;
-      } catch (e) {}
-      const response = await callClaude(`你是 MULTIPLY 沙龍的社群內容策略顧問，要幫設計師發想「每日內容題目」。\n品牌資料庫參考：\n${dbContext}\n規則：\n1. 全程繁體中文。\n2. 輸出剛好 5 個題目，每行一個，格式為「題目 — 一句話說明為什麼值得看」。\n3. 不要加編號或項目符號。`, input.trim() ? `這次想聚焦：${input.trim()}` : "請自由發想本週題目", 600);
-      const lines = response.split("\n").map((l) => l.replace(/^[\-•\d\.\s]+/, "").trim()).filter(Boolean);
-      if (!lines.length) throw new Error("AI 回傳了空白內容，請再試一次。");
-      setIdeas(lines);
-    } catch (e) { setError(e.message || "生成失敗，請再試一次。"); } finally { setLoading(false); }
-  };
-  return (
-    <div style={{ ...cardStyle, marginBottom: 14 }}>
-      <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 10 }}>AI 每日內容題目</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="想聚焦的方向（可留空）" style={{ flex: 1, ...inputStyle }} />
-        <button onClick={generate} disabled={loading} style={primaryBtnStyle(loading)}>{loading ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />} 產生</button>
-      </div>
-      {error && <p style={{ color: "#C77A6B", fontSize: 12.5, margin: "0 0 8px" }}>{error}</p>}
-      {ideas.map((idea, i) => <div key={i} style={{ padding: "8px 10px", background: TOKENS.bgElev, borderRadius: 8, marginBottom: 6, fontSize: 12.5, color: TOKENS.ink, lineHeight: 1.6 }}>{idea}</div>)}
-    </div>
-  );
-}
-function ContentStrategyPanel() {
-  return (
-    <div style={{ marginTop: 8 }}>
-      <InfoNote>以下「每日題目」「行事曆」「三個資料庫」已可實際使用並自動儲存；資料庫屬於團隊共用，所有使用者都看得到。「爆款案例拆解」「品牌內容方向」「個人定位設定」「成功內容模板」仍為架構規劃，尚未做成功能。</InfoNote>
-      <div className="grid-2col" style={{ marginTop: 16 }}>
-        <div><DailyTopicGenerator /><TagEditor label="內容分類" listKey="content-categories" hint="新增分類，按 Enter" /></div>
-        <div><ContentCalendar /></div>
-      </div>
-      <div className="grid-2col" style={{ marginTop: 4 }}>
-        <TagEditor label="客群痛點資料庫" listKey="pain-points" hint="新增痛點，按 Enter" />
-        <TagEditor label="服務主題資料庫" listKey="service-topics" hint="新增服務主題，按 Enter" />
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Layer 03: Performance & Conversion Analytics ---------- */
+/* ---------- Layer 02: Performance & Conversion Analytics ---------- */
 
 function AnalyticsPanel() {
   const userId = useUserId();
@@ -496,8 +440,7 @@ function LayerDetail({ layer, onBack }) {
       <SectionLabel>功能模組</SectionLabel>
       <div style={{ marginTop: 14 }}>{layer.features.map((f) => <Chip key={f}>{f}</Chip>)}</div>
 
-      {layer.key === "strategy" && <ContentStrategyPanel />}
-      {layer.key === "ai" && <AIAssistant />}
+      {layer.key === "content" && <ContentPanel />}
       {layer.key === "analytics" && <AnalyticsPanel />}
     </div>
   );
@@ -516,13 +459,13 @@ export default function MultiplyCreatorOS({ user }) {
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 6, position: "relative" }}>
             <Sparkles size={14} color={TOKENS.gold} />
-            <span style={{ fontSize: 11.5, letterSpacing: "0.14em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>ALL 3 LAYERS LIVE</span>
+            <span style={{ fontSize: 11.5, letterSpacing: "0.14em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>ALL 2 LAYERS LIVE</span>
             <button onClick={signOut} title="登出" style={{ position: "absolute", right: 0, display: "flex", alignItems: "center", gap: 6, background: "none", border: `1px solid ${TOKENS.line}`, borderRadius: 999, padding: "5px 12px", color: TOKENS.inkDim, fontSize: 11.5, cursor: "pointer" }}>
               <LogOut size={12} /> 登出
             </button>
           </div>
           <h1 style={{ textAlign: "center", fontFamily: "'Noto Serif TC', serif", fontSize: "clamp(26px,5vw,38px)", fontWeight: 700, margin: "0 0 10px" }}>MULTIPLY Creator OS</h1>
-          <p style={{ textAlign: "center", color: TOKENS.inkDim, fontSize: 14.5, margin: "0 0 8px" }}>三層內容作業系統 — 從找到題目，到再進入下一輪</p>
+          <p style={{ textAlign: "center", color: TOKENS.inkDim, fontSize: 14.5, margin: "0 0 8px" }}>兩層內容作業系統 — 從找到題目，到再進入下一輪</p>
           {user?.email && <p style={{ textAlign: "center", color: TOKENS.inkFaint, fontSize: 12, margin: "0 0 24px" }}>{user.email}</p>}
           <PillNav active={active} onSelect={setActive} />
           <div style={{ background: TOKENS.bgElev, border: `1px solid ${TOKENS.line}`, borderRadius: 20, padding: "clamp(24px,4vw,44px)" }}>
