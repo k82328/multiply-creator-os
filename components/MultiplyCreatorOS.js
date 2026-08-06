@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bot, ClipboardCheck,
-  Users, BookOpen, Link2, ArrowRight, ChevronLeft, Sparkles,
+  Users, BookOpen, Link2, ArrowRight, ChevronLeft, ChevronRight, Sparkles,
   Wand2, Copy, Check, RefreshCw, Loader2, MessageSquareText,
   LogOut,
 } from "lucide-react";
@@ -14,8 +14,8 @@ import { UserIdContext, useUserId } from "../lib/UserIdContext";
 import {
   getProfile, upsertProfile,
   getSettings, updateSettings,
-  getDailyReport, upsertDailyReport, getAllDailyReportsForDate,
-  getWeeklyReport, upsertWeeklyReport, getAllWeeklyReportsForWeek,
+  getDailyReport, upsertDailyReport, getAllDailyReportsForDate, getDailyReportsForRange,
+  getWeeklyReport, upsertWeeklyReport, getAllWeeklyReportsForWeek, getWeeklyReportsForRange,
   getAllDesignerProfiles,
 } from "../lib/data";
 
@@ -345,13 +345,31 @@ function ContentPanel() {
 
 /* ---------- Layer 02: Designer Work Reports ---------- */
 
+// Local calendar date as YYYY-MM-DD — never toISOString(), which converts to
+// UTC and shifts the date backward for timezones ahead of UTC (e.g. UTC+8).
+function toDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getWeekStart(d = new Date()) {
   const date = new Date(d);
   const day = date.getDay();
   const diff = (day === 0 ? -6 : 1) - day;
   date.setDate(date.getDate() + diff);
-  return date.toISOString().slice(0, 10);
+  return toDateKey(date);
 }
+
+function getWeekEnd(weekStartKey) {
+  const [y, m, d] = weekStartKey.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + 6);
+  return toDateKey(date);
+}
+
+function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(); }
 
 function NumberField({ label, value, onChange }) {
   return (
@@ -367,9 +385,90 @@ function AchievementBadge({ achieved, label }) {
   );
 }
 
+const PINK = "#E0A0BE";
+const GREEN = "#7C9070";
+
+function ReportCalendar({ userId, settings, title }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [dailyMap, setDailyMap] = useState({});
+  const [weeklyAchievedDays, setWeeklyAchievedDays] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      setLoading(true);
+      const first = toDateKey(new Date(year, month, 1));
+      const last = toDateKey(new Date(year, month + 1, 0));
+      try {
+        const rows = await getDailyReportsForRange(userId, first, last);
+        const map = {};
+        rows.forEach((r) => { map[Number(r.report_date.slice(8, 10))] = r.stories_count; });
+        setDailyMap(map);
+      } catch (e) {}
+      try {
+        const rangeStart = toDateKey(new Date(year, month, -6));
+        const rows = await getWeeklyReportsForRange(userId, rangeStart, last);
+        const sundays = {};
+        rows.forEach((r) => {
+          const [wy, wm, wd] = r.week_start.split("-").map(Number);
+          const sunday = new Date(wy, wm - 1, wd);
+          sunday.setDate(sunday.getDate() + 6);
+          if (sunday.getFullYear() === year && sunday.getMonth() === month) {
+            if (r.videos_count >= settings.weekly_video_target && r.posts_count >= settings.weekly_post_target) {
+              sundays[sunday.getDate()] = true;
+            }
+          }
+        });
+        setWeeklyAchievedDays(sundays);
+      } catch (e) {}
+      setLoading(false);
+    })();
+  }, [userId, year, month, settings.weekly_video_target, settings.weekly_post_target]);
+
+  const total = daysInMonth(year, month);
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const cells = [...Array(firstWeekday).fill(null), ...Array.from({ length: total }, (_, i) => i + 1)];
+
+  const prevMonth = () => { if (month === 0) { setYear((y) => y - 1); setMonth(11); } else setMonth((m) => m - 1); };
+  const nextMonth = () => { if (month === 11) { setYear((y) => y + 1); setMonth(0); } else setMonth((m) => m + 1); };
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <button onClick={prevMonth} style={iconBtnStyle}><ChevronLeft size={14} /></button>
+        <span style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>{title ? `${title} — ` : ""}{year} 年 {month + 1} 月達成日曆{loading ? "…" : ""}</span>
+        <button onClick={nextMonth} style={iconBtnStyle}><ChevronRight size={14} /></button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 4 }}>{["日", "一", "二", "三", "四", "五", "六"].map((d) => <div key={d} style={{ textAlign: "center", fontSize: 11, color: TOKENS.inkFaint }}>{d}</div>)}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const dailyOk = dailyMap[d] !== undefined && dailyMap[d] >= settings.daily_story_target;
+          const weeklyOk = !!weeklyAchievedDays[d];
+          return (
+            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 8, border: `1px solid ${TOKENS.line}`, background: TOKENS.bgElev, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: TOKENS.ink }}>
+              <span>{d}</span>
+              {dailyOk && <span style={{ position: "absolute", bottom: 1, left: 4, fontSize: 11, color: GREEN, fontWeight: 700 }}>✓</span>}
+              {weeklyOk && <span style={{ position: "absolute", bottom: 1, right: 4, fontSize: 11, color: PINK, fontWeight: 700 }}>✓</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 11, color: TOKENS.inkFaint, flexWrap: "wrap" }}>
+        <span><span style={{ color: GREEN, fontWeight: 700 }}>✓</span> 當日限動達標</span>
+        <span><span style={{ color: PINK, fontWeight: 700 }}>✓</span> 週日：本週影片＋貼文達標</span>
+      </div>
+    </div>
+  );
+}
+
 function DesignerReportsView({ userId }) {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = toDateKey(new Date());
   const weekStart = getWeekStart();
+  const weekEnd = getWeekEnd(weekStart);
 
   const [settings, setSettings] = useState({ daily_story_target: 5, weekly_video_target: 1, weekly_post_target: 1 });
   const [daily, setDaily] = useState({ stories_count: "", inquiries_count: "", bookings_count: "", technical_revenue: "", retail_revenue: "" });
@@ -442,24 +541,28 @@ function DesignerReportsView({ userId }) {
           <button onClick={saveDaily} disabled={dailySaving} style={{ ...primaryBtnStyle(dailySaving), width: "100%", marginTop: 10 }}>{dailySaved ? <Check size={16} /> : null}{dailySaved ? "已儲存" : dailySaving ? "儲存中…" : "儲存今日回報"}</button>
         </div>
         <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>本週回報 — {weekStart} 起</span>
             <div style={{ display: "flex", gap: 6 }}>
               <AchievementBadge achieved={videosAchieved} label={`影片 ${Number(weekly.videos_count) || 0}/${settings.weekly_video_target}`} />
               <AchievementBadge achieved={postsAchieved} label={`貼文 ${Number(weekly.posts_count) || 0}/${settings.weekly_post_target}`} />
             </div>
           </div>
+          <p style={{ fontSize: 11, color: TOKENS.inkFaint, margin: "0 0 12px" }}>截止日：週日（{weekEnd}）</p>
           <NumberField label="本週影片數" value={weekly.videos_count} onChange={(v) => setWeeklyField("videos_count", v)} />
           <NumberField label="本週貼文數" value={weekly.posts_count} onChange={(v) => setWeeklyField("posts_count", v)} />
           <button onClick={saveWeekly} disabled={weeklySaving} style={{ ...primaryBtnStyle(weeklySaving), width: "100%", marginTop: 10 }}>{weeklySaved ? <Check size={16} /> : null}{weeklySaved ? "已儲存" : weeklySaving ? "儲存中…" : "儲存本週回報"}</button>
         </div>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <ReportCalendar userId={userId} settings={settings} />
       </div>
     </div>
   );
 }
 
 function AdminReportsView() {
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = toDateKey(new Date());
   const weekStart = getWeekStart();
 
   const [settings, setSettings] = useState({ daily_story_target: 5, weekly_video_target: 1, weekly_post_target: 1 });
@@ -469,6 +572,7 @@ function AdminReportsView() {
   const [dailyReports, setDailyReports] = useState([]);
   const [weeklyReports, setWeeklyReports] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [selectedDesigner, setSelectedDesigner] = useState(null);
 
   const load = async () => {
     try { setSettings(await getSettings()); } catch (e) {}
@@ -539,7 +643,9 @@ function AdminReportsView() {
                 const postsOk = wr && wr.posts_count >= settings.weekly_post_target;
                 return (
                   <tr key={d.id} style={{ borderTop: `1px solid ${TOKENS.line}` }}>
-                    <td style={{ padding: "8px" }}>{d.email || d.id.slice(0, 8)}</td>
+                    <td style={{ padding: "8px" }}>
+                      <button onClick={() => setSelectedDesigner(d)} style={{ background: "none", border: "none", padding: 0, color: selectedDesigner?.id === d.id ? TOKENS.gold : TOKENS.ink, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", fontSize: 12.5, fontFamily: "inherit" }}>{d.email || d.id.slice(0, 8)}</button>
+                    </td>
                     <td style={{ padding: "8px", color: dr ? (storiesOk ? TOKENS.gold : "#C77A6B") : TOKENS.inkFaint }}>{dr ? `${dr.stories_count}/${settings.daily_story_target}` : "未回報"}</td>
                     <td style={{ padding: "8px" }}>{dr ? dr.inquiries_count : "—"}</td>
                     <td style={{ padding: "8px" }}>{dr ? dr.bookings_count : "—"}</td>
@@ -554,6 +660,16 @@ function AdminReportsView() {
           </table>
         )}
       </div>
+
+      {selectedDesigner && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <SectionLabel>{selectedDesigner.email || selectedDesigner.id} 的達成日曆</SectionLabel>
+            <button onClick={() => setSelectedDesigner(null)} style={{ background: "none", border: "none", color: TOKENS.inkFaint, fontSize: 12, cursor: "pointer" }}>關閉 ✕</button>
+          </div>
+          <ReportCalendar userId={selectedDesigner.id} settings={settings} />
+        </div>
+      )}
     </div>
   );
 }
