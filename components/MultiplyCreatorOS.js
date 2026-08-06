@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bot, BarChart3,
+  Bot, ClipboardCheck,
   Users, BookOpen, Link2, ArrowRight, ChevronLeft, Sparkles,
   Wand2, Copy, Check, RefreshCw, Loader2, MessageSquareText,
   LogOut,
@@ -13,7 +13,10 @@ import { callClaude } from "../lib/claude";
 import { UserIdContext, useUserId } from "../lib/UserIdContext";
 import {
   getProfile, upsertProfile,
-  getAnalyticsHistory, saveAnalyticsWeek,
+  getSettings, updateSettings,
+  getDailyReport, upsertDailyReport, getAllDailyReportsForDate,
+  getWeeklyReport, upsertWeeklyReport, getAllWeeklyReportsForWeek,
+  getAllDesignerProfiles,
 } from "../lib/data";
 
 const TOKENS = {
@@ -27,10 +30,10 @@ const LAYERS = [
     problem: "我今天要發什麼？寫出來又怕不像我。",
     core: "設定好你的個人資料，AI 就能先幫你想題目，再直接把選中的題目寫成貼文——從發想到成稿一次完成。",
     features: ["設計師個人資料", "AI 每日內容題目", "AI 三秒鉤子", "AI Reels 腳本", "AI IG 文案", "AI Threads 文案", "AI 限動腳本", "AI CTA", "AI 標題", "AI Hashtag", "AI 語氣調整", "AI 內容改寫"], live: true },
-  { n: "02", key: "analytics", name: "數據與轉換系統", en: "Performance & Conversion Analytics", icon: BarChart3,
-    problem: "我發了，但不知道有沒有用。",
-    core: "不能只看流量，最重要的是要串到：社群內容 → 私訊 → 預約 → 到店 → 成交 → 回購。",
-    features: ["觀看數", "完播率", "收藏率", "分享率", "留言率", "粉絲成長", "私訊詢問", "預約人數", "社群成交率", "社群營收", "內容類型分析", "個人趨勢分析", "團隊比較"], live: true },
+  { n: "02", key: "reports", name: "設計師作業回報", en: "Designer Work Reports", icon: ClipboardCheck,
+    problem: "設計師今天做了什麼？主管看不到。",
+    core: "每天回報限動、詢問、預約、業績，每週回報影片與貼文——主管一眼就能看到誰達標、誰卡關。",
+    features: ["每日限動回報", "每日詢問／預約數", "每日業績回報", "每週影片／貼文回報", "後台監控", "目標篇數設定"], live: true },
 ];
 
 const BASE_MODULES = [
@@ -64,8 +67,6 @@ const PROFILE_FIELDS = [
 ];
 
 const EMPTY_PROFILE = { service: "", audience: "", tone: "", price: "", trait: "", avoid: "" };
-
-const FUNNEL_STEPS = ["社群內容", "私訊", "預約", "到店", "成交", "回購"];
 
 function buildSystemPrompt(profile, type) {
   const filled = (v) => (v && v.trim() ? v.trim() : "未提供");
@@ -342,75 +343,235 @@ function ContentPanel() {
   );
 }
 
-/* ---------- Layer 02: Performance & Conversion Analytics ---------- */
+/* ---------- Layer 02: Designer Work Reports ---------- */
 
-function AnalyticsPanel() {
-  const userId = useUserId();
-  const [values, setValues] = useState({});
-  const [history, setHistory] = useState([]);
-  const [saved, setSaved] = useState(false);
+function getWeekStart(d = new Date()) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setDate(date.getDate() + diff);
+  return date.toISOString().slice(0, 10);
+}
+
+function NumberField({ label, value, onChange }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <label style={{ fontSize: 13, color: TOKENS.inkDim }}>{label}</label>
+      <input type="number" min="0" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0" style={{ width: 100, ...inputStyle, textAlign: "right" }} />
+    </div>
+  );
+}
+function AchievementBadge({ achieved, label }) {
+  return (
+    <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 999, border: `1px solid ${achieved ? TOKENS.gold : TOKENS.line}`, color: achieved ? TOKENS.gold : TOKENS.inkFaint, whiteSpace: "nowrap" }}>{achieved ? "✓ " : ""}{label}</span>
+  );
+}
+
+function DesignerReportsView({ userId }) {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const weekStart = getWeekStart();
+
+  const [settings, setSettings] = useState({ daily_story_target: 5, weekly_video_target: 1, weekly_post_target: 1 });
+  const [daily, setDaily] = useState({ stories_count: "", inquiries_count: "", bookings_count: "", technical_revenue: "", retail_revenue: "" });
+  const [dailySaving, setDailySaving] = useState(false);
+  const [dailySaved, setDailySaved] = useState(false);
+  const [weekly, setWeekly] = useState({ videos_count: "", posts_count: "" });
+  const [weeklySaving, setWeeklySaving] = useState(false);
+  const [weeklySaved, setWeeklySaved] = useState(false);
+
   useEffect(() => {
-    if (!userId) return;
-    (async () => { try { setHistory(await getAnalyticsHistory(userId)); } catch (e) {} })();
+    (async () => {
+      try { setSettings(await getSettings()); } catch (e) {}
+      try {
+        const row = await getDailyReport(userId, todayKey);
+        if (row) setDaily({ stories_count: row.stories_count, inquiries_count: row.inquiries_count, bookings_count: row.bookings_count, technical_revenue: row.technical_revenue, retail_revenue: row.retail_revenue });
+      } catch (e) {}
+      try {
+        const row = await getWeeklyReport(userId, weekStart);
+        if (row) setWeekly({ videos_count: row.videos_count, posts_count: row.posts_count });
+      } catch (e) {}
+    })();
   }, [userId]);
-  const setVal = (step, v) => setValues((prev) => ({ ...prev, [step]: v }));
-  const saveWeek = async () => {
-    const weekLabel = new Date().toISOString().slice(0, 10);
+
+  const setDailyField = (key, v) => setDaily((prev) => ({ ...prev, [key]: v }));
+  const setWeeklyField = (key, v) => setWeekly((prev) => ({ ...prev, [key]: v }));
+
+  const saveDaily = async () => {
+    setDailySaving(true);
     try {
-      await saveAnalyticsWeek(userId, weekLabel, values);
-      setHistory(await getAnalyticsHistory(userId));
-      setSaved(true); setTimeout(() => setSaved(false), 1500);
-    } catch (e) {}
+      await upsertDailyReport(userId, todayKey, {
+        stories_count: Number(daily.stories_count) || 0,
+        inquiries_count: Number(daily.inquiries_count) || 0,
+        bookings_count: Number(daily.bookings_count) || 0,
+        technical_revenue: Number(daily.technical_revenue) || 0,
+        retail_revenue: Number(daily.retail_revenue) || 0,
+      });
+      setDailySaved(true); setTimeout(() => setDailySaved(false), 1500);
+    } catch (e) {} finally { setDailySaving(false); }
   };
-  const nums = FUNNEL_STEPS.map((s) => Number(values[s]) || 0);
-  const base = nums[0] || 0;
+
+  const saveWeekly = async () => {
+    setWeeklySaving(true);
+    try {
+      await upsertWeeklyReport(userId, weekStart, {
+        videos_count: Number(weekly.videos_count) || 0,
+        posts_count: Number(weekly.posts_count) || 0,
+      });
+      setWeeklySaved(true); setTimeout(() => setWeeklySaved(false), 1500);
+    } catch (e) {} finally { setWeeklySaving(false); }
+  };
+
+  const storiesAchieved = (Number(daily.stories_count) || 0) >= settings.daily_story_target;
+  const videosAchieved = (Number(weekly.videos_count) || 0) >= settings.weekly_video_target;
+  const postsAchieved = (Number(weekly.posts_count) || 0) >= settings.weekly_post_target;
 
   return (
     <div style={{ marginTop: 8 }}>
-      <InfoNote>此為手動輸入的儀表板，尚未串接 Instagram、預約系統等真實數據源——之後可透過「資料整合」模組把這裡改成自動抓取。這裡的數字只有你自己看得到。</InfoNote>
+      <InfoNote>每日回報請於當天填寫；每週回報請於週日前完成本週的影片與貼文數。</InfoNote>
       <div className="grid-2col" style={{ marginTop: 16 }}>
         <div style={cardStyle}>
-          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 14 }}>本週數據輸入</div>
-          {FUNNEL_STEPS.map((step) => (
-            <div key={step} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <label style={{ fontSize: 13, color: TOKENS.inkDim }}>{step}</label>
-              <input type="number" min="0" value={values[step] || ""} onChange={(e) => setVal(step, e.target.value)} placeholder="0" style={{ width: 90, ...inputStyle, textAlign: "right" }} />
-            </div>
-          ))}
-          <button onClick={saveWeek} style={{ ...primaryBtnStyle(false), width: "100%", marginTop: 10 }}>{saved ? <Check size={16} /> : null}{saved ? "已儲存" : "儲存本週數據"}</button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>今日回報 — {todayKey}</span>
+            <AchievementBadge achieved={storiesAchieved} label={`限動 ${Number(daily.stories_count) || 0}/${settings.daily_story_target}`} />
+          </div>
+          <NumberField label="限動篇數" value={daily.stories_count} onChange={(v) => setDailyField("stories_count", v)} />
+          <NumberField label="詢問數" value={daily.inquiries_count} onChange={(v) => setDailyField("inquiries_count", v)} />
+          <NumberField label="預約數" value={daily.bookings_count} onChange={(v) => setDailyField("bookings_count", v)} />
+          <NumberField label="技術業績" value={daily.technical_revenue} onChange={(v) => setDailyField("technical_revenue", v)} />
+          <NumberField label="店販業績" value={daily.retail_revenue} onChange={(v) => setDailyField("retail_revenue", v)} />
+          <button onClick={saveDaily} disabled={dailySaving} style={{ ...primaryBtnStyle(dailySaving), width: "100%", marginTop: 10 }}>{dailySaved ? <Check size={16} /> : null}{dailySaved ? "已儲存" : dailySaving ? "儲存中…" : "儲存今日回報"}</button>
         </div>
         <div style={cardStyle}>
-          <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 14 }}>轉換漏斗</div>
-          {FUNNEL_STEPS.map((step, i) => {
-            const pct = base > 0 ? Math.round((nums[i] / base) * 100) : 0;
-            return (
-              <div key={step} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: TOKENS.inkDim, marginBottom: 4 }}><span>{step}</span><span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{nums[i]}（{pct}%）</span></div>
-                <div style={{ height: 8, background: TOKENS.bgElev, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, ${TOKENS.goldDim}, ${TOKENS.gold})`, borderRadius: 4 }} /></div>
-              </div>
-            );
-          })}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace" }}>本週回報 — {weekStart} 起</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <AchievementBadge achieved={videosAchieved} label={`影片 ${Number(weekly.videos_count) || 0}/${settings.weekly_video_target}`} />
+              <AchievementBadge achieved={postsAchieved} label={`貼文 ${Number(weekly.posts_count) || 0}/${settings.weekly_post_target}`} />
+            </div>
+          </div>
+          <NumberField label="本週影片數" value={weekly.videos_count} onChange={(v) => setWeeklyField("videos_count", v)} />
+          <NumberField label="本週貼文數" value={weekly.posts_count} onChange={(v) => setWeeklyField("posts_count", v)} />
+          <button onClick={saveWeekly} disabled={weeklySaving} style={{ ...primaryBtnStyle(weeklySaving), width: "100%", marginTop: 10 }}>{weeklySaved ? <Check size={16} /> : null}{weeklySaved ? "已儲存" : weeklySaving ? "儲存中…" : "儲存本週回報"}</button>
         </div>
       </div>
-      {history.length > 0 && (
-        <div style={{ marginTop: 18 }}>
-          <SectionLabel>歷史紀錄</SectionLabel>
-          <div style={{ ...cardStyle, marginTop: 14 }}>
-            {history.slice().reverse().map((h) => {
-              const first = Number(h.values[FUNNEL_STEPS[0]]) || 0;
-              const last = Number(h.values[FUNNEL_STEPS[FUNNEL_STEPS.length - 1]]) || 0;
-              const rate = first > 0 ? Math.round((last / first) * 100) : 0;
-              return (
-                <div key={h.week} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: TOKENS.inkDim, padding: "6px 0", borderBottom: `1px solid ${TOKENS.line}` }}>
-                  <span>{h.week}</span><span>社群內容 {first} → 回購 {last}（整體轉換 {rate}%）</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
+}
+
+function AdminReportsView() {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const weekStart = getWeekStart();
+
+  const [settings, setSettings] = useState({ daily_story_target: 5, weekly_video_target: 1, weekly_post_target: 1 });
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [designers, setDesigners] = useState([]);
+  const [dailyReports, setDailyReports] = useState([]);
+  const [weeklyReports, setWeeklyReports] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = async () => {
+    try { setSettings(await getSettings()); } catch (e) {}
+    try { setDesigners(await getAllDesignerProfiles()); } catch (e) {}
+    try { setDailyReports(await getAllDailyReportsForDate(todayKey)); } catch (e) {}
+    try { setWeeklyReports(await getAllWeeklyReportsForWeek(weekStart)); } catch (e) {}
+    setLoaded(true);
+  };
+  useEffect(() => { load(); }, []);
+
+  const saveSettings = async () => {
+    setSettingsSaving(true);
+    try {
+      await updateSettings({
+        daily_story_target: Number(settings.daily_story_target) || 0,
+        weekly_video_target: Number(settings.weekly_video_target) || 0,
+        weekly_post_target: Number(settings.weekly_post_target) || 0,
+      });
+      setSettingsSaved(true); setTimeout(() => setSettingsSaved(false), 1500);
+    } catch (e) {} finally { setSettingsSaving(false); }
+  };
+
+  const dailyByUser = Object.fromEntries(dailyReports.map((r) => [r.user_id, r]));
+  const weeklyByUser = Object.fromEntries(weeklyReports.map((r) => [r.user_id, r]));
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <InfoNote>管理者畫面：可設定目標篇數，並監控所有設計師今天／本週的回報狀態。</InfoNote>
+
+      <div style={{ ...cardStyle, marginTop: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.1em", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12 }}>目標設定</div>
+        <div className="grid-2col">
+          <NumberField label="每日限動目標篇數" value={settings.daily_story_target} onChange={(v) => setSettings((s) => ({ ...s, daily_story_target: v }))} />
+          <div>
+            <NumberField label="每週影片目標" value={settings.weekly_video_target} onChange={(v) => setSettings((s) => ({ ...s, weekly_video_target: v }))} />
+            <NumberField label="每週貼文目標" value={settings.weekly_post_target} onChange={(v) => setSettings((s) => ({ ...s, weekly_post_target: v }))} />
+          </div>
+        </div>
+        <button onClick={saveSettings} disabled={settingsSaving} style={{ ...primaryBtnStyle(settingsSaving), width: "100%", marginTop: 10 }}>{settingsSaved ? <Check size={16} /> : null}{settingsSaved ? "已儲存" : settingsSaving ? "儲存中…" : "儲存目標設定"}</button>
+      </div>
+
+      <SectionLabel>設計師監控 — 今日 {todayKey} ／ 本週 {weekStart} 起</SectionLabel>
+      <div style={{ ...cardStyle, marginTop: 14, overflowX: "auto" }}>
+        {!loaded ? (
+          <span style={{ fontSize: 12.5, color: TOKENS.inkFaint }}>載入中…</span>
+        ) : designers.length === 0 ? (
+          <span style={{ fontSize: 12.5, color: TOKENS.inkFaint }}>尚無其他設計師帳號</span>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 720 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: TOKENS.inkFaint, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                <th style={{ padding: "6px 8px" }}>設計師</th>
+                <th style={{ padding: "6px 8px" }}>今日限動</th>
+                <th style={{ padding: "6px 8px" }}>詢問數</th>
+                <th style={{ padding: "6px 8px" }}>預約數</th>
+                <th style={{ padding: "6px 8px" }}>技術業績</th>
+                <th style={{ padding: "6px 8px" }}>店販業績</th>
+                <th style={{ padding: "6px 8px" }}>本週影片</th>
+                <th style={{ padding: "6px 8px" }}>本週貼文</th>
+              </tr>
+            </thead>
+            <tbody>
+              {designers.map((d) => {
+                const dr = dailyByUser[d.id];
+                const wr = weeklyByUser[d.id];
+                const storiesOk = dr && dr.stories_count >= settings.daily_story_target;
+                const videosOk = wr && wr.videos_count >= settings.weekly_video_target;
+                const postsOk = wr && wr.posts_count >= settings.weekly_post_target;
+                return (
+                  <tr key={d.id} style={{ borderTop: `1px solid ${TOKENS.line}` }}>
+                    <td style={{ padding: "8px" }}>{d.email || d.id.slice(0, 8)}</td>
+                    <td style={{ padding: "8px", color: dr ? (storiesOk ? TOKENS.gold : "#C77A6B") : TOKENS.inkFaint }}>{dr ? `${dr.stories_count}/${settings.daily_story_target}` : "未回報"}</td>
+                    <td style={{ padding: "8px" }}>{dr ? dr.inquiries_count : "—"}</td>
+                    <td style={{ padding: "8px" }}>{dr ? dr.bookings_count : "—"}</td>
+                    <td style={{ padding: "8px" }}>{dr ? dr.technical_revenue : "—"}</td>
+                    <td style={{ padding: "8px" }}>{dr ? dr.retail_revenue : "—"}</td>
+                    <td style={{ padding: "8px", color: wr ? (videosOk ? TOKENS.gold : "#C77A6B") : TOKENS.inkFaint }}>{wr ? `${wr.videos_count}/${settings.weekly_video_target}` : "未回報"}</td>
+                    <td style={{ padding: "8px", color: wr ? (postsOk ? TOKENS.gold : "#C77A6B") : TOKENS.inkFaint }}>{wr ? `${wr.posts_count}/${settings.weekly_post_target}` : "未回報"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReportsPanel() {
+  const userId = useUserId();
+  const [profile, setProfile] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      try { setProfile(await getProfile(userId)); } catch (e) {}
+      finally { setLoaded(true); }
+    })();
+  }, [userId]);
+
+  if (!loaded) return <InfoNote>載入中…</InfoNote>;
+  return profile?.is_admin ? <AdminReportsView /> : <DesignerReportsView userId={userId} />;
 }
 
 /* ---------- layer detail ---------- */
@@ -431,7 +592,7 @@ function LayerDetail({ layer, onBack }) {
       <p style={{ color: TOKENS.inkDim, fontSize: 14, lineHeight: 1.9, maxWidth: 620, margin: "12px 0 32px" }}>{layer.core}</p>
 
       {layer.key === "content" && <ContentPanel />}
-      {layer.key === "analytics" && <AnalyticsPanel />}
+      {layer.key === "reports" && <ReportsPanel />}
     </div>
   );
 }
@@ -442,6 +603,11 @@ export default function MultiplyCreatorOS({ user }) {
   const [active, setActive] = useState(0);
   const router = useRouter();
   const signOut = async () => { await supabase.auth.signOut(); router.replace("/login"); };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    upsertProfile(user.id, { email: user.email || "" }).catch(() => {});
+  }, [user?.id, user?.email]);
 
   return (
     <UserIdContext.Provider value={user?.id}>

@@ -112,3 +112,67 @@ alter table leaderboard enable row level security;
 create policy "team read leaderboard" on leaderboard for select using (auth.role() = 'authenticated');
 create policy "own leaderboard insert" on leaderboard for insert with check (auth.uid() = user_id);
 create policy "own leaderboard update" on leaderboard for update using (auth.uid() = user_id);
+
+-- ============================================================
+-- Migration 2026-08-05: designer work-report tracking + admin role
+-- Run this block separately in the SQL Editor — the tables above already exist.
+-- ============================================================
+
+alter table profiles add column if not exists is_admin boolean not null default false;
+alter table profiles add column if not exists email text;
+
+-- security definer so this can be called from RLS policies on `profiles` itself
+-- without triggering infinite recursion (a plain subquery on profiles would).
+create or replace function is_admin(uid uuid) returns boolean
+language sql security definer stable
+as $$
+  select coalesce((select p.is_admin from profiles p where p.id = uid), false);
+$$;
+
+create policy "admin read all profiles" on profiles for select
+  using (is_admin(auth.uid()));
+
+-- single-row global settings, editable only by admins
+create table if not exists app_settings (
+  id int primary key default 1,
+  daily_story_target int not null default 5,
+  weekly_video_target int not null default 1,
+  weekly_post_target int not null default 1,
+  updated_at timestamptz not null default now(),
+  check (id = 1)
+);
+insert into app_settings (id) values (1) on conflict (id) do nothing;
+alter table app_settings enable row level security;
+create policy "team read settings" on app_settings for select using (auth.role() = 'authenticated');
+create policy "admin update settings" on app_settings for update using (is_admin(auth.uid()));
+
+create table if not exists daily_reports (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  report_date date not null,
+  stories_count int not null default 0,
+  inquiries_count int not null default 0,
+  bookings_count int not null default 0,
+  technical_revenue numeric not null default 0,
+  retail_revenue numeric not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, report_date)
+);
+alter table daily_reports enable row level security;
+create policy "own daily reports" on daily_reports for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "admin read daily reports" on daily_reports for select
+  using (is_admin(auth.uid()));
+
+create table if not exists weekly_reports (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  week_start date not null,
+  videos_count int not null default 0,
+  posts_count int not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, week_start)
+);
+alter table weekly_reports enable row level security;
+create policy "own weekly reports" on weekly_reports for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "admin read weekly reports" on weekly_reports for select
+  using (is_admin(auth.uid()));
