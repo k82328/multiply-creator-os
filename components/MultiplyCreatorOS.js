@@ -373,9 +373,9 @@ function daysInMonth(year, month) { return new Date(year, month + 1, 0).getDate(
 
 function NumberField({ label, value, onChange }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-      <label style={{ fontSize: 13, color: TOKENS.inkDim }}>{label}</label>
-      <input type="number" min="0" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0" style={{ width: 100, ...inputStyle, textAlign: "right" }} />
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
+      <label style={{ fontSize: 13, color: TOKENS.inkDim, whiteSpace: "nowrap", flexShrink: 0 }}>{label}</label>
+      <input type="number" min="0" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0" style={{ ...inputStyle, width: 76, padding: "8px 18px 8px 8px", textAlign: "right" }} />
     </div>
   );
 }
